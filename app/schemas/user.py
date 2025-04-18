@@ -17,3 +17,13 @@ class User(UserBase):
 
     class Config:
         orm_mode = True
+
+# UserUpdate schema that allows for optional fields
+class UserUpdate(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    address: str | None = None
+
+    class Config:
+        orm_mode = True
