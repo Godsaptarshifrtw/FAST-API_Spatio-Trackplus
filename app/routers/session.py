@@ -1,32 +1,63 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from typing import List
 from app.database.session_db import get_db
 from app.auth import session as session_utils
-from app.schemas.session import Session as SessionSchema
+from app.schemas.session import Session as SessionSchema, SessionCreate
+from app.models.session import Session as SessionModel
+from app.models.user import User as UserModel
+from datetime import datetime, timedelta
 
-router = APIRouter(prefix="/sessions", tags=["Sessions"])
+router = APIRouter()
 
 
-@router.post("/login", response_model=SessionSchema)
-def login(user_id: int, request: Request, db: Session = Depends(get_db)):
-    ip = request.client.host
-    device_info = request.headers.get("user-agent", "Unknown Device")
-    return session_utils.create_session(db, user_id=user_id, ip_address=ip, device_info=device_info)
+@router.post("/", response_model=SessionSchema)
+def create_session(session: SessionCreate, db: Session = Depends(get_db)):
+    # Check if user exists
+    user = db.query(UserModel).filter(UserModel.user_id == session.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create new session
+    db_session = SessionModel(
+        user_id=session.user_id,
+        token=session.token,
+        ip_address=session.ip_address,
+        device_info=session.device_info,
+        expires_at=datetime.utcnow() + timedelta(days=1),  # Default 1 day expiration
+        created_at=datetime.utcnow()
+    )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    return db_session
 
-@router.get("/me/{token}", response_model=SessionSchema)
-def get_session(token: str, db: Session = Depends(get_db)):
-    session = session_utils.get_session_by_token(db, token)
-    if not session:
+@router.get("/{session_id}", response_model=SessionSchema)
+def get_session(session_id: int, db: Session = Depends(get_db)):
+    db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+    if db_session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    return db_session
 
-@router.delete("/logout/{token}")
-def logout(token: str, db: Session = Depends(get_db)):
-    success = session_utils.delete_session(db, token)
-    if not success:
-        raise HTTPException(status_code=404, detail="Session not found or already logged out")
-    return {"message": "Logged out successfully"}
-
-@router.get("/user/{user_id}", response_model=list[SessionSchema])
+@router.get("/user/{user_id}", response_model=List[SessionSchema])
 def get_user_sessions(user_id: int, db: Session = Depends(get_db)):
-    return session_utils.get_active_sessions_for_user(db, user_id)
+    sessions = db.query(SessionModel).filter(SessionModel.user_id == user_id).all()
+    return sessions
+
+@router.get("/active/{user_id}", response_model=List[SessionSchema])
+def get_active_sessions(user_id: int, db: Session = Depends(get_db)):
+    current_time = datetime.utcnow()
+    sessions = db.query(SessionModel).filter(
+        SessionModel.user_id == user_id,
+        SessionModel.expires_at > current_time
+    ).all()
+    return sessions
+
+@router.delete("/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    db_session = db.query(SessionModel).filter(SessionModel.session_id == session_id).first()
+    if db_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    db.delete(db_session)
+    db.commit()
+    return {"message": "Session deleted successfully"}

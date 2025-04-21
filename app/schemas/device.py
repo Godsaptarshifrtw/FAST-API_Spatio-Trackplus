@@ -1,9 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+from typing import Optional
 
 class DeviceBase(BaseModel):
     user_id: int
-    subscription_id: int
+    subscription_id: Optional[int] = None
     imei_number: str
     device_type: str
     model: str
@@ -16,5 +17,4 @@ class Device(DeviceBase):
     device_id: int
     added_on: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
