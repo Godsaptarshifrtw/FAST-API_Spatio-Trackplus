@@ -54,3 +54,12 @@ def get_user_devices(user_id: int, db: Session = Depends(get_db)):
 def get_devices(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     devices = db.query(DeviceModel).offset(skip).limit(limit).all()
     return devices
+
+@router.delete("/{device_id}")
+def delete_device(device_id: int, db: Device = Depends(get_db)):
+    db_device = db.query(DeviceModel).filter(UserModel.user_id == device_id).first()
+    if db_device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    db.delete(db_device)
+    db.commit()
+    return {"message": "device deleted successfully"}
