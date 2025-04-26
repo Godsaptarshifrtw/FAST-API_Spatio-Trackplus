@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.security import HTTPBasic
 from app.routers import user, device, subscription, plan, payment, session
 from app.database.db import Base, engine
 from app.database.session_db import Base as SessionBase, engine as session_engine
@@ -20,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Load environment variables from .env
 load_dotenv()
 
+# Create security scheme
+security = HTTPBasic()
+
 # Initialize databases
 logger.info("Initializing databases...")
 init_db()
@@ -29,7 +33,11 @@ logger.info("Database initialization completed")
 app = FastAPI(
     title="Subscription and Device Management API",
     version="1.0.0",
-    description="Backend system to manage users, subscriptions, devices, sessions, and payments."
+    description="Backend system to manage users, subscriptions, devices, sessions, and payments.",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={"defaultModelsExpandDepth": -1}
 )
 
 # Include Routers

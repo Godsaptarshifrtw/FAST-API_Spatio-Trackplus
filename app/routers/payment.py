@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.database.db import get_db
 from app.schemas.payment import PaymentCreate, Payment, PaymentUpdate
 from app.models.payment import Payment as PaymentModel
 from app.models.user import User as UserModel
 from app.models.plan import Plan as PlanModel
+from app.auth.auth import get_current_user
 from datetime import datetime
 import logging
 
@@ -18,35 +19,22 @@ def test_endpoint():
     return {"message": "Payment router is working"}
 
 @router.post("/", response_model=Payment)
-def create_payment(payment: PaymentCreate, db: Session = Depends(get_db)):
-    logger.info(f"Creating payment with data: {payment.model_dump()}")
-    
-    # Check if user exists
-    user = db.query(UserModel).filter(UserModel.user_id == payment.user_id).first()
-    if not user:
-        logger.error(f"User not found: {payment.user_id}")
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Check if plan exists
-    plan = db.query(PlanModel).filter(PlanModel.plan_id == payment.plan_id).first()
-    if not plan:
-        logger.error(f"Plan not found: {payment.plan_id}")
-        raise HTTPException(status_code=404, detail="Plan not found")
-    
+def create_payment(payment: PaymentCreate, 
+                  db: Session = Depends(get_db),
+                  current_user: UserModel = Depends(get_current_user)):
     # Create new payment
     db_payment = PaymentModel(
         user_id=payment.user_id,
-        plan_id=payment.plan_id,
         amount=payment.amount,
         payment_method=payment.payment_method,
         status=payment.status,
         transaction_id=payment.transaction_id,
-        payment_date=datetime.utcnow()
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
     )
     db.add(db_payment)
     db.commit()
     db.refresh(db_payment)
-    logger.info(f"Payment created successfully: {db_payment.payment_id}")
     return db_payment
 
 @router.get("/{payment_id}", response_model=Payment)
@@ -71,45 +59,39 @@ def get_subscription_payments(subscription_id: int, db: Session = Depends(get_db
     return payments
 
 @router.put("/{payment_id}", response_model=Payment)
-def update_payment(payment_id: int, payment: PaymentUpdate, db: Session = Depends(get_db)):
-    logger.info(f"Updating payment with ID: {payment_id}")
+def update_payment(payment_id: int, 
+                  payment: PaymentUpdate, 
+                  db: Session = Depends(get_db),
+                  current_user: UserModel = Depends(get_current_user)):
     db_payment = db.query(PaymentModel).filter(PaymentModel.payment_id == payment_id).first()
     if db_payment is None:
-        logger.warning(f"Payment not found with ID: {payment_id}")
         raise HTTPException(status_code=404, detail="Payment not found")
     
-    # Check if user exists if user_id is being updated
-    if payment.user_id is not None:
-        user = db.query(UserModel).filter(UserModel.user_id == payment.user_id).first()
-        if not user:
-            logger.error(f"User not found: {payment.user_id}")
-            raise HTTPException(status_code=404, detail="User not found")
-    
-    # Check if plan exists if plan_id is being updated
-    if payment.plan_id is not None:
-        plan = db.query(PlanModel).filter(PlanModel.plan_id == payment.plan_id).first()
-        if not plan:
-            logger.error(f"Plan not found: {payment.plan_id}")
-            raise HTTPException(status_code=404, detail="Plan not found")
+    # Verify user has permission to update this payment
+    if db_payment.user_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this payment")
     
     update_data = payment.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_payment, key, value)
     
+    db_payment.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(db_payment)
-    logger.info(f"Payment {payment_id} updated successfully")
     return db_payment
 
 @router.delete("/{payment_id}")
-def delete_payment(payment_id: int, db: Session = Depends(get_db)):
-    logger.info(f"Deleting payment with ID: {payment_id}")
+def delete_payment(payment_id: int, 
+                  db: Session = Depends(get_db),
+                  current_user: UserModel = Depends(get_current_user)):
     db_payment = db.query(PaymentModel).filter(PaymentModel.payment_id == payment_id).first()
     if db_payment is None:
-        logger.warning(f"Payment not found with ID: {payment_id}")
         raise HTTPException(status_code=404, detail="Payment not found")
+    
+    # Verify user has permission to delete this payment
+    if db_payment.user_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this payment")
     
     db.delete(db_payment)
     db.commit()
-    logger.info(f"Payment {payment_id} deleted successfully")
     return {"message": "Payment deleted successfully"}
