@@ -1,15 +1,23 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
 from datetime import datetime
+from typing import Optional
 
 
 class UserBase(BaseModel):
     name: str
     email: EmailStr
-    phone: str
-    address: str
+    phone: Optional[str] = None
+    address: Optional[str] = None
 
 class UserCreate(UserBase):
     pass
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserUpdate(UserBase):
+    password: Optional[str] = None
 
 class User(UserBase):
     user_id: int
@@ -18,11 +26,9 @@ class User(UserBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-# UserUpdate schema that allows for optional fields
-class UserUpdate(BaseModel):
-    name: str | None = None
-    email: EmailStr | None = None
-    phone: str | None = None
-    address: str | None = None
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
-    model_config = ConfigDict(from_attributes=True)
+class TokenData(BaseModel):
+    email: Optional[str] = None

@@ -13,6 +13,14 @@ class PlanBase(BaseModel):
 class PlanCreate(PlanBase):
     pass
 
+class PlanUpdate(BaseModel):
+    product_id: Optional[int] = None
+    name: Optional[str] = None
+    price: Optional[float] = None
+    duration_days: Optional[int] = None
+    features: Optional[dict] = None
+    is_active: Optional[bool] = None
+
 class Plan(PlanBase):
     plan_id: int
     created_at: datetime

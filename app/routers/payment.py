@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.database.db import get_db
-from app.schemas.payment import PaymentCreate, Payment
+from app.schemas.payment import PaymentCreate, Payment, PaymentUpdate
 from app.models.payment import Payment as PaymentModel
 from app.models.user import User as UserModel
 from app.models.plan import Plan as PlanModel
@@ -51,17 +51,65 @@ def create_payment(payment: PaymentCreate, db: Session = Depends(get_db)):
 
 @router.get("/{payment_id}", response_model=Payment)
 def get_payment(payment_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Fetching payment with ID: {payment_id}")
     db_payment = db.query(PaymentModel).filter(PaymentModel.payment_id == payment_id).first()
     if db_payment is None:
+        logger.warning(f"Payment not found with ID: {payment_id}")
         raise HTTPException(status_code=404, detail="Payment not found")
     return db_payment
 
 @router.get("/user/{user_id}", response_model=List[Payment])
 def get_user_payments(user_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Fetching payments for user ID: {user_id}")
     payments = db.query(PaymentModel).filter(PaymentModel.user_id == user_id).all()
+    logger.info(f"Found {len(payments)} payments for user {user_id}")
     return payments
 
 @router.get("/subscription/{subscription_id}", response_model=List[Payment])
 def get_subscription_payments(subscription_id: int, db: Session = Depends(get_db)):
     payments = db.query(PaymentModel).filter(PaymentModel.subscription_id == subscription_id).all()
     return payments
+
+@router.put("/{payment_id}", response_model=Payment)
+def update_payment(payment_id: int, payment: PaymentUpdate, db: Session = Depends(get_db)):
+    logger.info(f"Updating payment with ID: {payment_id}")
+    db_payment = db.query(PaymentModel).filter(PaymentModel.payment_id == payment_id).first()
+    if db_payment is None:
+        logger.warning(f"Payment not found with ID: {payment_id}")
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    # Check if user exists if user_id is being updated
+    if payment.user_id is not None:
+        user = db.query(UserModel).filter(UserModel.user_id == payment.user_id).first()
+        if not user:
+            logger.error(f"User not found: {payment.user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if plan exists if plan_id is being updated
+    if payment.plan_id is not None:
+        plan = db.query(PlanModel).filter(PlanModel.plan_id == payment.plan_id).first()
+        if not plan:
+            logger.error(f"Plan not found: {payment.plan_id}")
+            raise HTTPException(status_code=404, detail="Plan not found")
+    
+    update_data = payment.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_payment, key, value)
+    
+    db.commit()
+    db.refresh(db_payment)
+    logger.info(f"Payment {payment_id} updated successfully")
+    return db_payment
+
+@router.delete("/{payment_id}")
+def delete_payment(payment_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Deleting payment with ID: {payment_id}")
+    db_payment = db.query(PaymentModel).filter(PaymentModel.payment_id == payment_id).first()
+    if db_payment is None:
+        logger.warning(f"Payment not found with ID: {payment_id}")
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    db.delete(db_payment)
+    db.commit()
+    logger.info(f"Payment {payment_id} deleted successfully")
+    return {"message": "Payment deleted successfully"}

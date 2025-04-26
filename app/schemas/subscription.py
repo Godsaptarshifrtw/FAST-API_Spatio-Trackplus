@@ -14,6 +14,15 @@ class SubscriptionBase(BaseModel):
 class SubscriptionCreate(SubscriptionBase):
     pass
 
+class SubscriptionUpdate(BaseModel):
+    user_id: Optional[int] = None
+    plan_id: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: Optional[str] = None
+    renewal_type: Optional[str] = None
+    payment_id: Optional[int] = None
+
 class Subscription(SubscriptionBase):
     subscription_id: int
     created_at: datetime

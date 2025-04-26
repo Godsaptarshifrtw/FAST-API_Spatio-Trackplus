@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.database.db import get_db
-from app.schemas.subscription import SubscriptionCreate, Subscription
+from app.schemas.subscription import SubscriptionCreate, Subscription, SubscriptionUpdate
 from app.models.subscription import Subscription as SubscriptionModel
 from app.models.user import User as UserModel
 from app.models.plan import Plan as PlanModel
@@ -66,19 +66,23 @@ def create_subscription(subscription: SubscriptionCreate, db: Session = Depends(
 
 @router.get("/{subscription_id}", response_model=Subscription)
 def get_subscription(subscription_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Fetching subscription with ID: {subscription_id}")
     db_subscription = db.query(SubscriptionModel).filter(SubscriptionModel.subscription_id == subscription_id).first()
     if db_subscription is None:
+        logger.warning(f"Subscription not found with ID: {subscription_id}")
         raise HTTPException(status_code=404, detail="Subscription not found")
     return db_subscription
 
 @router.get("/user/{user_id}", response_model=List[Subscription])
 def get_user_subscriptions(user_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Fetching subscriptions for user ID: {user_id}")
     subscriptions = db.query(SubscriptionModel).filter(SubscriptionModel.user_id == user_id).all()
+    logger.info(f"Found {len(subscriptions)} subscriptions for user {user_id}")
     return subscriptions
 
 @router.get("/", response_model=List[Subscription])
 def get_subscriptions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    logger.info(f"GET /subscriptions/ endpoint called with skip={skip}, limit={limit}")
+    logger.info(f"Fetching subscriptions with skip={skip}, limit={limit}")
     try:
         subscriptions = db.query(SubscriptionModel).offset(skip).limit(limit).all()
         logger.info(f"Found {len(subscriptions)} subscriptions")
@@ -86,3 +90,54 @@ def get_subscriptions(skip: int = 0, limit: int = 100, db: Session = Depends(get
     except Exception as e:
         logger.error(f"Error in get_subscriptions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{subscription_id}", response_model=Subscription)
+def update_subscription(subscription_id: int, subscription: SubscriptionUpdate, db: Session = Depends(get_db)):
+    logger.info(f"Updating subscription with ID: {subscription_id}")
+    db_subscription = db.query(SubscriptionModel).filter(SubscriptionModel.subscription_id == subscription_id).first()
+    if db_subscription is None:
+        logger.warning(f"Subscription not found with ID: {subscription_id}")
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    
+    # Check if user exists if user_id is being updated
+    if subscription.user_id is not None:
+        user = db.query(UserModel).filter(UserModel.user_id == subscription.user_id).first()
+        if not user:
+            logger.error(f"User not found: {subscription.user_id}")
+            raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if plan exists if plan_id is being updated
+    if subscription.plan_id is not None:
+        plan = db.query(PlanModel).filter(PlanModel.plan_id == subscription.plan_id).first()
+        if not plan:
+            logger.error(f"Plan not found: {subscription.plan_id}")
+            raise HTTPException(status_code=404, detail="Plan not found")
+    
+    # Check if payment exists if payment_id is being updated
+    if subscription.payment_id is not None:
+        payment = db.query(PaymentModel).filter(PaymentModel.payment_id == subscription.payment_id).first()
+        if not payment:
+            logger.error(f"Payment not found: {subscription.payment_id}")
+            raise HTTPException(status_code=404, detail="Payment not found")
+    
+    update_data = subscription.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_subscription, key, value)
+    
+    db.commit()
+    db.refresh(db_subscription)
+    logger.info(f"Subscription {subscription_id} updated successfully")
+    return db_subscription
+
+@router.delete("/{subscription_id}")
+def delete_subscription(subscription_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Deleting subscription with ID: {subscription_id}")
+    db_subscription = db.query(SubscriptionModel).filter(SubscriptionModel.subscription_id == subscription_id).first()
+    if db_subscription is None:
+        logger.warning(f"Subscription not found with ID: {subscription_id}")
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    
+    db.delete(db_subscription)
+    db.commit()
+    logger.info(f"Subscription {subscription_id} deleted successfully")
+    return {"message": "Subscription deleted successfully"}
